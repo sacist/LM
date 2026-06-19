@@ -1,0 +1,74 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: light;
+  --lm-cream: #fff9f5;
+  --lm-surface: #ffffff;
+  --lm-coral: #ff6b8a;
+  --lm-coral-hover: #ff5277;
+  --lm-lavender: #e9ddff;
+  --lm-sky: #e0f4ff;
+  --lm-text: #1e293b;
+  --lm-muted: #64748b;
+}
+
+@theme inline {
+  --color-lm-cream: var(--lm-cream);
+  --color-lm-surface: var(--lm-surface);
+  --color-lm-coral: var(--lm-coral);
+  --color-lm-coral-hover: var(--lm-coral-hover);
+  --color-lm-lavender: var(--lm-lavender);
+  --color-lm-sky: var(--lm-sky);
+  --color-lm-text: var(--lm-text);
+  --color-lm-muted: var(--lm-muted);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  min-height: 100%;
+  color: var(--lm-text);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+.lm-page-bg {
+  position: relative;
+  min-height: 100%;
+  background: linear-gradient(
+    135deg,
+    #fff5f7 0%,
+    #f5f0ff 35%,
+    #eef8ff 70%,
+    #fff9f5 100%
+  );
+}
+
+.lm-page-bg::before,
+.lm-page-bg::after {
+  content: "";
+  position: fixed;
+  border-radius: 50%;
+  filter: blur(80px);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.lm-page-bg::before {
+  width: 420px;
+  height: 420px;
+  top: -80px;
+  right: -60px;
+  background: rgba(255, 107, 138, 0.35);
+}
+
+.lm-page-bg::after {
+  width: 380px;
+  height: 380px;
+  bottom: 20%;
+  left: -80px;
+  background: rgba(196, 181, 253, 0.45);
+}
