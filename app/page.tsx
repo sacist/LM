@@ -1,6 +1,10 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+
+const API_URL =
+  (typeof process !== "undefined" && process.env?.NEXT_PUBLIC_API_URL) ||
+  "http://localhost:3001";
 
 const STYLE_GALLERY = [
   { src: "/Galery/1.jpg", alt: "Уличный casual", tag: "Casual" },
@@ -22,6 +26,8 @@ type Msg = {
 
 type GalleryItem = (typeof STYLE_GALLERY)[number];
 
+type Attachment = { file: File; url: string };
+
 function uid() {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
@@ -35,40 +41,118 @@ type LookChatProps = {
 function LookChatDemo({ messages, setMessages, onAddReference }: LookChatProps) {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
   const endRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const objectUrlsRef = useRef<string[]>([]);
 
-  const canSend = useMemo(() => input.trim().length > 0 && !loading, [input, loading]);
+  useEffect(() => {
+    return () => {
+      for (const url of objectUrlsRef.current) URL.revokeObjectURL(url);
+      objectUrlsRef.current = [];
+    };
+  }, []);
+
+  function trackUrl(url: string): string {
+    objectUrlsRef.current.push(url);
+    return url;
+  }
+
+  const canSend = useMemo(
+    () => (input.trim().length > 0 || attachments.length > 0) && !loading,
+    [input, attachments.length, loading],
+  );
 
   function scrollToBottom() {
     requestAnimationFrame(() => endRef.current?.scrollIntoView({ behavior: "smooth" }));
   }
 
+  function onPickFiles(e: React.ChangeEvent<HTMLInputElement>) {
+    const list = e.target.files;
+    if (!list) return;
+    const next: Attachment[] = [];
+    for (let i = 0; i < list.length; i++) {
+      const f = list.item(i);
+      if (!f || !f.type.startsWith("image/")) continue;
+      next.push({ file: f, url: trackUrl(URL.createObjectURL(f)) });
+    }
+    if (next.length > 0) {
+      setAttachments((prev) => [...prev, ...next]);
+    }
+    e.target.value = "";
+  }
+
+  function removeAttachment(idx: number) {
+    setAttachments((prev) => prev.filter((_, i) => i !== idx));
+  }
+
   async function send() {
     const text = input.trim();
-    if (!text || loading) return;
+    if ((!text && attachments.length === 0) || loading) return;
 
-    const userMsg: Msg = { id: uid(), role: "user", text };
+    const previewAttachments = attachments;
+    const history = messages;
+
+    const userMsg: Msg = {
+      id: uid(),
+      role: "user",
+      text: text || (previewAttachments.length > 0 ? "(вложение без текста)" : ""),
+    };
+    if (previewAttachments.length > 0) {
+      const first = previewAttachments[0];
+      if (first) {
+        userMsg.imageSrc = first.url;
+        userMsg.imageAlt = first.file.name || "Загруженное фото";
+      }
+    }
     setMessages((m) => [...m, userMsg]);
     setInput("");
+    setAttachments([]);
     setLoading(true);
     scrollToBottom();
 
     try {
-      const res = await fetch("https://jsonplaceholder.typicode.com/posts/1");
-      const data = (await res.json()) as { body?: string };
+      const fd = new FormData();
+      fd.append("text", text);
+      fd.append("messages", JSON.stringify(history));
+      for (const a of previewAttachments) {
+        fd.append("files", a.file, a.file.name);
+      }
+
+      const res = await fetch(`${API_URL}/api/chat`, {
+        method: "POST",
+        body: fd,
+      });
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+
+      const encoded = res.headers.get("X-Assistant-Text") ?? "";
+      let replyText = "";
+      try {
+        replyText = decodeURIComponent(encoded);
+      } catch {
+        replyText = encoded;
+      }
+
+      const blob = await res.blob();
+      const imageUrl = trackUrl(URL.createObjectURL(blob));
 
       const botMsg: Msg = {
         id: uid(),
         role: "assistant",
-        text: `Бот: ${data.body ?? "нет ответа"}`,
+        text: replyText || undefined,
+        imageSrc: imageUrl,
+        imageAlt: "Сгенерированный образ",
       };
 
       setMessages((m) => [...m, botMsg]);
       scrollToBottom();
-    } catch {
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : "unknown";
       setMessages((m) => [
         ...m,
-        { id: uid(), role: "assistant", text: "Бот: ошибка соединения" },
+        { id: uid(), role: "assistant", text: `Бот: ошибка соединения (${detail})` },
       ]);
       scrollToBottom();
     } finally {
@@ -176,9 +260,45 @@ function LookChatDemo({ messages, setMessages, onAddReference }: LookChatProps) 
         </div>
 
         <div className="shrink-0 border-t border-white/60 bg-white/55 px-4 py-4 backdrop-blur-xl sm:px-6">
+          {attachments.length > 0 && (
+            <div className="mx-auto mb-2 flex max-w-3xl flex-wrap gap-2">
+              {attachments.map((a, i) => (
+                <div
+                  key={a.url}
+                  className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl ring-1 ring-violet-100"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={a.url}
+                    alt={a.file.name}
+                    className="h-full w-full object-cover"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeAttachment(i)}
+                    aria-label="Удалить вложение"
+                    className="absolute right-0.5 top-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-slate-900/80 text-[11px] font-bold leading-none text-white shadow-sm transition hover:bg-slate-900"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            className="hidden"
+            onChange={onPickFiles}
+          />
+
           <div className="mx-auto flex max-w-3xl items-end gap-2">
             <button
               type="button"
+              onClick={() => fileInputRef.current?.click()}
               className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/80 text-slate-600 ring-1 ring-violet-100 transition hover:bg-white hover:text-slate-800"
               aria-label="Прикрепить фото"
               title="Прикрепить фото"
